@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+*.exe
+*.dll
+*.pdb
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS Code settings
+.vscode/
+
+# Rider settings
+.idea/
+
+# Dotnet publish output
+publish/
+
+# Logs
+*.log
+
+# Raylib files
+raylib.dll
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
