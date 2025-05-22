@@ -1,12 +1,12 @@
 ﻿using Raylib_cs;
 using System.Numerics;
-
+using System.Diagnostics;
 
 class Program {
     static Color light_square_color = new(0xff, 0xe6, 0xcc);
     static Color dark_square_color = new(0x80, 0x42, 0x1c);
 
-    static readonly int board_size = 600;
+    static readonly int board_size = 1000;
 
     static int SquareSize => board_size / 8;
 
@@ -27,30 +27,45 @@ class Program {
     };
 
     static void Main() {
-        Raylib.InitWindow(board_size, board_size, "Chess");
+        BoardState boardState = new ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
-        BoardState boardState = new BoardState
-        {
-            board = new List<string>
-            {
-                "rnbqkbnr",
-                "pppppppp",
-                "........",
-                "........",
-                "........",
-                "........",
-                "PPPPPPPP",
-                "RNBQKBNR"
-            },
-            white_to_move = true,
-            castling_rights_white_king_side = true,
-            castling_rights_white_queen_side = true,
-            castling_rights_black_king_side = true,
-            castling_rights_black_queen_side = true,
-            en_passant_target_square = -1,
-            halfmove_clock = 0,
-            fullmove_number = 1
-        };
+        // Run engine/chess.exe and ask for legal moves and draw them
+        Console.WriteLine("Starting engine process...");
+        Process engineProcess = new();
+        engineProcess.StartInfo.FileName = "engine/chess.exe";
+        engineProcess.StartInfo.Arguments = "engine";
+        engineProcess.StartInfo.UseShellExecute = false;
+        engineProcess.StartInfo.RedirectStandardInput = true;
+        engineProcess.StartInfo.RedirectStandardOutput = true;
+        engineProcess.StartInfo.CreateNoWindow = true;
+        engineProcess.Start();
+        Console.WriteLine("Engine process started.");
+
+        StreamWriter engineInput = engineProcess.StandardInput;
+        StreamReader engineOutput = engineProcess.StandardOutput;
+
+        Console.WriteLine("Sending FEN to engine...");
+        engineInput.WriteLine("setfen");
+        engineInput.WriteLine(boardState.ToFEN());
+
+        Console.WriteLine("Fetching Moves...");
+        engineInput.WriteLine("getmoves");
+        engineInput.WriteLine("end");
+        string moves = "";
+        while (true) {
+            string line = engineOutput.ReadLine();
+            if (line == null || line == "end") {
+                break;
+            }
+            moves += line + "\n";
+        }
+        Console.WriteLine(moves);
+
+        int holdIndex = -1;
+        bool isDragging = false;
+
+        
+        Raylib.InitWindow(board_size, board_size, "Chess");
 
         Dictionary<string, Texture2D> pieceSprites = [];
         foreach (var piece in pieceImages) {
@@ -58,24 +73,26 @@ class Program {
             pieceSprites.Add(piece.Key, texture);
         }
 
-
-        int holdIndex = -1;
-        bool isDragging = false;
-
         while (!Raylib.WindowShouldClose()) {
             Raylib.BeginDrawing();
 
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    Raylib.DrawRectangle(i * SquareSize, j * SquareSize, SquareSize, SquareSize, (i + j) % 2 == 0 ? light_square_color : dark_square_color);
+            for (int file = 0; file < 8; file++) {
+                for (int rank = 0; rank < 8; rank++) {
+                    int draw_rank = 7 - rank; // Flip the rank for drawing
+                    // If a move starts with the square, draw a red square
+                    if (moves.Contains($"{(char)('a' + file)}{(char)('1' + rank)}\n")) {
+                        Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, Color.Red);
+                    } else {
+                        Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, (file + rank) % 2 == 0 ? light_square_color : dark_square_color);
+                    }
                     // Draw the pieces
-                    char piece = boardState.board[j][i];
-                    if (piece != '.' && pieceSprites.ContainsKey(piece.ToString()) && !(holdIndex == (j * 8 + i) && isDragging)) {
+                    char piece = boardState.board[rank][file];
+                    if (piece != '.' && pieceSprites.ContainsKey(piece.ToString()) && !(holdIndex == (rank * 8 + file) && isDragging)) {
                         Texture2D texture = pieceSprites[piece.ToString()];
                         Raylib.DrawTexturePro(
                             texture,
                             new Rectangle(0, 0, texture.Width, texture.Height),
-                            new Rectangle(i * SquareSize, j * SquareSize, SquareSize, SquareSize),
+                            new Rectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize),
                             Vector2.Zero,
                             0,
                             Color.White
@@ -112,7 +129,7 @@ class Program {
             if (Raylib.IsMouseButtonPressed(MouseButton.Left)) {
                 Vector2 mousePos = Raylib.GetMousePosition();
                 int x = (int)(mousePos.X / SquareSize);
-                int y = (int)(mousePos.Y / SquareSize);
+                int y = 7 - (int)(mousePos.Y / SquareSize);
 
                 if (x >= 0 && x < 8 && y >= 0 && y < 8) {
                     char piece = boardState.board[y][x];
@@ -134,7 +151,7 @@ class Program {
                 }
 
                 int x = (int)(mousePos.X / SquareSize);
-                int y = (int)(mousePos.Y / SquareSize);
+                int y = 7 - (int)(mousePos.Y / SquareSize);
 
                 if (x >= 0 && x < 8 && y >= 0 && y < 8) {
                     char piece = boardState.board[holdIndex / 8][holdIndex % 8];
@@ -159,7 +176,7 @@ class Program {
 
 
 class BoardState {
-    public required List<string> board;
+    public List<string> board;
     public bool white_to_move;
     public bool castling_rights_white_king_side;
     public bool castling_rights_white_queen_side;
@@ -170,6 +187,9 @@ class BoardState {
     public int fullmove_number;
 
     public string ToFEN() {
+        // Flip the board list
+        board.Reverse();
+
         string fen = "";
 
         // Convert the board to FEN format
@@ -212,6 +232,46 @@ class BoardState {
         }
 
         fen += " " + halfmove_clock + " " + fullmove_number;
+
+        // Reverse the board list back to original
+        board.Reverse();
         return fen;
+    }
+
+    public void FromFEN(string fen) {
+        string[] parts = fen.Split(' ');
+
+        // Parse the board
+        board = [];
+        string[] rows = parts[0].Split('/');
+        foreach (string row in rows) {
+            string boardRow = "";
+            foreach (char c in row) {
+                if (char.IsDigit(c)) {
+                    int emptyCount = c - '0';
+                    boardRow += new string('.', emptyCount);
+                } else {
+                    boardRow += c;
+                }
+            }
+            board.Add(boardRow);
+        }
+
+        // Parse the rest of the FEN
+        white_to_move = parts[1] == "w";
+        castling_rights_white_king_side = parts[2].Contains('K');
+        castling_rights_white_queen_side = parts[2].Contains('Q');
+        castling_rights_black_king_side = parts[2].Contains('k');
+        castling_rights_black_queen_side = parts[2].Contains('q');
+        en_passant_target_square = parts[3] == "-" ? -1 : (parts[3][0] - 'a') + ((8 - (parts[3][1] - '0')) * 8);
+        halfmove_clock = int.Parse(parts[4]);
+        fullmove_number = int.Parse(parts[5]);
+
+        // Reverse the board to match the original orientation
+        board.Reverse();
+    }
+
+    public BoardState (string fen) {
+        FromFEN(fen);
     }
 }
