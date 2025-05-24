@@ -10,6 +10,10 @@ class Program {
 
     static int SquareSize => board_size / 8;
 
+    static readonly string startFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    static readonly string enginePath = "engine/chess.exe";
+
     static readonly Dictionary<string, string> pieceImages = new()
     {
         { "K", "assets/wk.png" },
@@ -27,14 +31,15 @@ class Program {
     };
 
     static void Main() {
-        BoardState boardState = new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        BoardState boardState = new(startFEN);
 
         int holdIndex = -1;
         bool isDragging = false;
 
         List<string> moves = [];
+        List<string> moveHistory = [];
 
-        GetMoves();
+        UpdateBoardState();
 
         Raylib.InitWindow(board_size, board_size, "Chess");
 
@@ -54,8 +59,6 @@ class Program {
                     moveRenderList.Add(move);
                 }
             }
-
-            Console.WriteLine($"Move Render List: {string.Join(", ", moveRenderList)}");
 
             for (int file = 0; file < 8; file++) {
                 for (int rank = 0; rank < 8; rank++) {
@@ -139,12 +142,21 @@ class Program {
                 int x = (int)(mousePos.X / SquareSize);
                 int y = 7 - (int)(mousePos.Y / SquareSize);
 
+                // if they are the same square, just ignore
+                if (holdIndex == y * 8 + x) {
+                    holdIndex = -1;
+                    isDragging = false;
+                    continue;
+                }
+
                 if (x >= 0 && x < 8 && y >= 0 && y < 8) {
                     char piece = boardState.board[holdIndex / 8][holdIndex % 8];
                     boardState.board[holdIndex / 8] = boardState.board[holdIndex / 8].Remove(holdIndex % 8, 1).Insert(holdIndex % 8, ".");
                     boardState.board[y] = boardState.board[y].Remove(x, 1).Insert(x, piece.ToString());
+                    
+                    moveHistory.Add($"{(char)('a' + holdIndex % 8)}{(char)('1' + (holdIndex / 8))}{(char)('a' + x)}{(char)('1' + y)}");
 
-                    GetMoves();
+                    UpdateBoardState();
                 }
 
                 holdIndex = -1;
@@ -160,13 +172,11 @@ class Program {
 
         Raylib.CloseWindow();
 
-
-
-        void GetMoves() {
+        void UpdateBoardState() {
             // Run engine/chess.exe and ask for legal moves and draw them
             Console.WriteLine("Starting engine process...");
             Process engineProcess = new();
-            engineProcess.StartInfo.FileName = "engine/chess.exe";
+            engineProcess.StartInfo.FileName = enginePath;
             engineProcess.StartInfo.Arguments = "engine";
             engineProcess.StartInfo.UseShellExecute = false;
             engineProcess.StartInfo.RedirectStandardInput = true;
@@ -178,23 +188,55 @@ class Program {
             StreamWriter engineInput = engineProcess.StandardInput;
             StreamReader engineOutput = engineProcess.StandardOutput;
 
-            Console.WriteLine("Sending FEN to engine...");
+            Console.WriteLine("Sending startFEN to engine...");
             engineInput.WriteLine("setfen");
-            engineInput.WriteLine(boardState.ToFEN());
+            engineInput.WriteLine(startFEN);
             Console.WriteLine("FEN set successfully.");
+            // check if response is ok
+            string response = engineOutput.ReadLine();
+            if (response != "ok") {
+                Console.WriteLine($"Error setting FEN: {response}");
+                return;
+            }
+
+            // Sending move history to the engine
+            Console.WriteLine("Sending moves to engine...");
+            string movesString = string.Join(" ", moveHistory);
+            engineInput.WriteLine("setmovehistory");
+            engineInput.WriteLine(movesString);
+            // check if response is ok
+            response = engineOutput.ReadLine();
+            if (response != "ok") {
+                Console.WriteLine($"Error setting move history: {response}");
+                return;
+            }
 
             Console.WriteLine("Fetching Moves...");
             engineInput.WriteLine("getmoves");
-            engineInput.WriteLine("end");
 
+            Console.WriteLine("Waiting for engine output...");
             moves = [];
             while (true) {
                 string line = engineOutput.ReadLine();
-                if (line == null || line == "end") {
+                if (line == null || line == "ok") {
                     break;
                 }
                 moves.Add(line);
             }
+
+            // Get FEN from the engine
+            Console.WriteLine("Fetching FEN from engine...");
+            engineInput.WriteLine("getfen");
+            string fen = engineOutput.ReadLine();
+            Console.WriteLine($"Received FEN: {fen}");
+            boardState.FromFEN(fen);
+            // check if response is ok
+            if (fen == null || fen == "ok") {
+                Console.WriteLine($"Error getting FEN: {fen}");
+                return;
+            }
+
+            engineInput.WriteLine("end");
             Console.WriteLine("Moves fetched successfully.");
         }
     }
