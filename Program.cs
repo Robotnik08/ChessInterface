@@ -27,44 +27,15 @@ class Program {
     };
 
     static void Main() {
-        BoardState boardState = new ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-
-        // Run engine/chess.exe and ask for legal moves and draw them
-        Console.WriteLine("Starting engine process...");
-        Process engineProcess = new();
-        engineProcess.StartInfo.FileName = "engine/chess.exe";
-        engineProcess.StartInfo.Arguments = "engine";
-        engineProcess.StartInfo.UseShellExecute = false;
-        engineProcess.StartInfo.RedirectStandardInput = true;
-        engineProcess.StartInfo.RedirectStandardOutput = true;
-        engineProcess.StartInfo.CreateNoWindow = true;
-        engineProcess.Start();
-        Console.WriteLine("Engine process started.");
-
-        StreamWriter engineInput = engineProcess.StandardInput;
-        StreamReader engineOutput = engineProcess.StandardOutput;
-
-        Console.WriteLine("Sending FEN to engine...");
-        engineInput.WriteLine("setfen");
-        engineInput.WriteLine(boardState.ToFEN());
-
-        Console.WriteLine("Fetching Moves...");
-        engineInput.WriteLine("getmoves");
-        engineInput.WriteLine("end");
-        string moves = "";
-        while (true) {
-            string line = engineOutput.ReadLine();
-            if (line == null || line == "end") {
-                break;
-            }
-            moves += line + "\n";
-        }
-        Console.WriteLine(moves);
+        BoardState boardState = new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
         int holdIndex = -1;
         bool isDragging = false;
 
-        
+        List<string> moves = [];
+
+        GetMoves();
+
         Raylib.InitWindow(board_size, board_size, "Chess");
 
         Dictionary<string, Texture2D> pieceSprites = [];
@@ -76,15 +47,30 @@ class Program {
         while (!Raylib.WindowShouldClose()) {
             Raylib.BeginDrawing();
 
+            // Make a move list of moves to render based on the start of the move (the dragging piece)
+            List<string> moveRenderList = [];
+            foreach (string move in moves) {
+                if (move.StartsWith($"{(char)('a' + holdIndex % 8)}{(char)('1' + (holdIndex / 8))}")) {
+                    moveRenderList.Add(move);
+                }
+            }
+
+            Console.WriteLine($"Move Render List: {string.Join(", ", moveRenderList)}");
+
             for (int file = 0; file < 8; file++) {
                 for (int rank = 0; rank < 8; rank++) {
                     int draw_rank = 7 - rank; // Flip the rank for drawing
+
                     // If a move starts with the square, draw a red square
-                    if (moves.Contains($"{(char)('a' + file)}{(char)('1' + rank)}\n")) {
-                        Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, Color.Red);
-                    } else {
-                        Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, (file + rank) % 2 == 0 ? light_square_color : dark_square_color);
+                    Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, (file + rank) % 2 == 0 ? light_square_color : dark_square_color);
+                    
+                    foreach (string move in moveRenderList) {
+                        if (move.EndsWith($"{(char)('a' + file)}{(char)('1' + rank)}")) {
+                            Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, Color.Red);
+                            break;
+                        }
                     }
+
                     // Draw the pieces
                     char piece = boardState.board[rank][file];
                     if (piece != '.' && pieceSprites.ContainsKey(piece.ToString()) && !(holdIndex == (rank * 8 + file) && isDragging)) {
@@ -157,6 +143,8 @@ class Program {
                     char piece = boardState.board[holdIndex / 8][holdIndex % 8];
                     boardState.board[holdIndex / 8] = boardState.board[holdIndex / 8].Remove(holdIndex % 8, 1).Insert(holdIndex % 8, ".");
                     boardState.board[y] = boardState.board[y].Remove(x, 1).Insert(x, piece.ToString());
+
+                    GetMoves();
                 }
 
                 holdIndex = -1;
@@ -171,6 +159,44 @@ class Program {
         }
 
         Raylib.CloseWindow();
+
+
+
+        void GetMoves() {
+            // Run engine/chess.exe and ask for legal moves and draw them
+            Console.WriteLine("Starting engine process...");
+            Process engineProcess = new();
+            engineProcess.StartInfo.FileName = "engine/chess.exe";
+            engineProcess.StartInfo.Arguments = "engine";
+            engineProcess.StartInfo.UseShellExecute = false;
+            engineProcess.StartInfo.RedirectStandardInput = true;
+            engineProcess.StartInfo.RedirectStandardOutput = true;
+            engineProcess.StartInfo.CreateNoWindow = true;
+            engineProcess.Start();
+            Console.WriteLine("Engine process started.");
+
+            StreamWriter engineInput = engineProcess.StandardInput;
+            StreamReader engineOutput = engineProcess.StandardOutput;
+
+            Console.WriteLine("Sending FEN to engine...");
+            engineInput.WriteLine("setfen");
+            engineInput.WriteLine(boardState.ToFEN());
+            Console.WriteLine("FEN set successfully.");
+
+            Console.WriteLine("Fetching Moves...");
+            engineInput.WriteLine("getmoves");
+            engineInput.WriteLine("end");
+
+            moves = [];
+            while (true) {
+                string line = engineOutput.ReadLine();
+                if (line == null || line == "end") {
+                    break;
+                }
+                moves.Add(line);
+            }
+            Console.WriteLine("Moves fetched successfully.");
+        }
     }
 }
 
