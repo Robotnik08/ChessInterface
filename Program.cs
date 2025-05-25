@@ -36,6 +36,8 @@ class Program {
         int holdIndex = -1;
         bool isDragging = false;
 
+        char promotionPiece = 'q'; // Default promotion piece, can be changed later
+
         List<string> moves = [];
         List<string> moveHistory = [];
 
@@ -66,12 +68,15 @@ class Program {
 
                     // If a move starts with the square, draw a red square
                     Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, (file + rank) % 2 == 0 ? light_square_color : dark_square_color);
-                    
+
                     foreach (string move in moveRenderList) {
-                        if (move.EndsWith($"{(char)('a' + file)}{(char)('1' + rank)}")) {
-                            Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, Color.Red);
+                        if (move[2] == (char)('a' + file) && move[3] == (char)('1' + rank)) {
+                            Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, new Color(255, 0, 0, 255 / 2)); // Highlight valid moves in red
                             break;
                         }
+                    }
+                    if (holdIndex == (rank * 8 + file) && isDragging) {
+                        Raylib.DrawRectangle(file * SquareSize, draw_rank * SquareSize, SquareSize, SquareSize, new Color(255, 255, 0, 255 / 2)); // Highlight the square being dragged in yellow
                     }
 
                     // Draw the pieces
@@ -153,12 +158,27 @@ class Program {
                     char piece = boardState.board[holdIndex / 8][holdIndex % 8];
                     boardState.board[holdIndex / 8] = boardState.board[holdIndex / 8].Remove(holdIndex % 8, 1).Insert(holdIndex % 8, ".");
                     boardState.board[y] = boardState.board[y].Remove(x, 1).Insert(x, piece.ToString());
-                    
-                    moveHistory.Add($"{(char)('a' + holdIndex % 8)}{(char)('1' + (holdIndex / 8))}{(char)('a' + x)}{(char)('1' + y)}");
+
+                    string generatedMove = $"{(char)('a' + holdIndex % 8)}{(char)('1' + (holdIndex / 8))}{(char)('a' + x)}{(char)('1' + y)}";
+                    // Add move from move list if that's in there, otherwise generate it here
+                    if (moves.Count > 0 && moves.Any(m => m.StartsWith(generatedMove))) {
+                        // check if amount of moves is more than 1, if so, that means it's a promotion and it needs to pick the one based on preference
+                        if (moves.Count(m => m.StartsWith(generatedMove)) > 1) {
+                            moveHistory.Add(generatedMove + promotionPiece);
+                        } else {
+                            // find the move that matches the holdIndex
+                            string move = moves.First(m => m.StartsWith(generatedMove));
+                            moveHistory.Add(move);
+                        }
+                    } else {
+                        // Generate the move in standard notation
+                        moveHistory.Add(generatedMove);
+                    }
 
                     UpdateBoardState();
                 }
 
+                promotionPiece = 'q'; // Reset promotion piece to queen after a move
                 holdIndex = -1;
                 isDragging = false;
             }
@@ -167,6 +187,34 @@ class Program {
             if (Raylib.IsKeyPressed(KeyboardKey.F)) {
                 string fen = boardState.ToFEN();
                 Console.WriteLine(fen);
+            }
+
+            if (Raylib.IsKeyPressed(KeyboardKey.C)) {
+                // Clear the board to the starting position
+                boardState.FromFEN(startFEN);
+                moveHistory.Clear();
+                UpdateBoardState();
+            }
+
+            if (Raylib.IsKeyPressed(KeyboardKey.U)) {
+                // Undo the last move
+                if (moveHistory.Count > 0) {
+                    moveHistory.RemoveAt(moveHistory.Count - 1);
+                    UpdateBoardState();
+                }
+            }
+
+            if (Raylib.IsKeyPressed(KeyboardKey.Q)) {
+                promotionPiece = 'q'; // Queen
+            }
+            if (Raylib.IsKeyPressed(KeyboardKey.R)) {
+                promotionPiece = 'r'; // Rook
+            }
+            if (Raylib.IsKeyPressed(KeyboardKey.B)) {
+                promotionPiece = 'b'; // Bishop
+            }
+            if (Raylib.IsKeyPressed(KeyboardKey.N)) {
+                promotionPiece = 'n'; // Knight
             }
         }
 
@@ -200,7 +248,7 @@ class Program {
             }
 
             // Sending move history to the engine
-            Console.WriteLine("Sending moves to engine...");
+            Console.WriteLine("Sending moves to engine... History: " + string.Join(", ", moveHistory));
             string movesString = string.Join(" ", moveHistory);
             engineInput.WriteLine("setmovehistory");
             engineInput.WriteLine(movesString);
