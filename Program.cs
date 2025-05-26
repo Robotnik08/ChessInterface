@@ -45,11 +45,16 @@ class Program {
 
         Raylib.InitWindow(board_size, board_size, "Chess");
 
+
         Dictionary<string, Texture2D> pieceSprites = [];
         foreach (var piece in pieceImages) {
             Texture2D texture = Raylib.LoadTexture(piece.Value);
             pieceSprites.Add(piece.Key, texture);
         }
+
+        Image iconTexture = Raylib.LoadImage("assets/bp.png");
+        Raylib.SetWindowIcon(iconTexture);
+        Raylib.SetTargetFPS(60);
 
         while (!Raylib.WindowShouldClose()) {
             Raylib.BeginDrawing();
@@ -277,15 +282,34 @@ class Program {
             engineInput.WriteLine("getfen");
             string fen = engineOutput.ReadLine();
             Console.WriteLine($"Received FEN: {fen}");
-            boardState.FromFEN(fen);
             // check if response is ok
             if (fen == null || fen == "ok") {
                 Console.WriteLine($"Error getting FEN: {fen}");
                 return;
             }
+            if (engineOutput.ReadLine() != "ok") {
+                Console.WriteLine("Error getting FEN: expected 'ok' response");
+                return;
+            }
+            boardState.FromFEN(fen);
+            
+
+            // Ask for board state
+            Console.WriteLine("Fetching board state from engine...");
+            engineInput.WriteLine("getstate");
+            string boardStateResponse = engineOutput.ReadLine();
+            if (boardStateResponse == null || boardStateResponse == "ok") {
+                Console.WriteLine($"Error getting board state: {boardStateResponse}");
+                return;
+            }
+            if (engineOutput.ReadLine() != "ok") {
+                Console.WriteLine("Error getting board state: expected 'ok' response");
+                return;
+            }
+            Console.WriteLine($"Received board state: {boardStateResponse}");
+
 
             engineInput.WriteLine("end");
-            Console.WriteLine("Moves fetched successfully.");
         }
     }
 }
