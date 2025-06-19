@@ -31,6 +31,8 @@ class Program {
 
     static readonly string enginePath = "C:/Users/Sebastiaan Heins/Downloads/chess-c/build/chess.exe";
 
+    static readonly string fensFile = "assets/fens.txt";
+
     static readonly Dictionary<string, string> pieceImages = new()
     {
         { "K", "assets/wk.png" },
@@ -54,6 +56,9 @@ class Program {
         State state = State.None;
 
         bool thinking = false;
+
+        List<string> fens = [.. File.ReadAllLines(fensFile)];
+        int fen_index = 0;
 
         int holdIndex = -1;
         bool isDragging = false;
@@ -231,10 +236,13 @@ class Program {
 
                 runningGames = true;
                 wins = draws = losses = 0;
+                fen_index = 0;
 
-                boardState.FromFEN(startFEN);
+                boardState.FromFEN(fens[fen_index % fens.Count]);
                 moveHistory.Clear();
                 botASide = true; // Start with Bot A as white
+                
+                UpdateBoardState(fens[fen_index % fens.Count]);
 
                 // append to log file	
                 currentLogFile = $"{logFolder}chess_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
@@ -256,7 +264,7 @@ class Program {
 
                     logWriter.WriteLine($"=======================");
                     logWriter.WriteLine($"  Game {1}");
-                    logWriter.WriteLine($"  Starting FEN: {startFEN}");
+                    logWriter.WriteLine($"  Starting FEN: {fens[fen_index % fens.Count]}");
                     logWriter.WriteLine($"  White: {(botASide ? "Bot A" : "Bot B")}");
                     logWriter.WriteLine($"  Black: {(botASide ? "Bot B" : "Bot A")}");
                     logWriter.WriteLine($"=======================");
@@ -415,15 +423,13 @@ class Program {
                             (boardState.white_to_move && selectedBotWhite == 0 && selectedBotBlack != 0) ||
                             (!boardState.white_to_move && selectedBotBlack == 0 && selectedBotWhite != 0)
                         ) {
-                            System.Threading.ThreadPool.QueueUserWorkItem(_ => {
-                                string move = boardState.white_to_move
-                                    ? askMove(botExecutablePathB)
-                                    : askMove(botExecutablePathA);
-                                if (move != null) {
-                                    moveHistory.Add(move);
-                                    UpdateBoardState();
-                                }
-                            });
+                            string move = boardState.white_to_move
+                                ? askMove(botExecutablePathB)
+                                : askMove(botExecutablePathA);
+                            if (move != null) {
+                                moveHistory.Add(move);
+                                UpdateBoardState();
+                            }
                         } else {
                             UpdateBoardState();
                         }
@@ -441,14 +447,14 @@ class Program {
                 Console.WriteLine(fen);
             }
 
-            if (Raylib.IsKeyPressed(KeyboardKey.C)) {
+            if (Raylib.IsKeyPressed(KeyboardKey.C) && !runningGames) {
                 // Clear the board to the starting position
                 boardState.FromFEN(startFEN);
                 moveHistory.Clear();
                 UpdateBoardState();
             }
 
-            if (Raylib.IsKeyPressed(KeyboardKey.U)) {
+            if (Raylib.IsKeyPressed(KeyboardKey.U) && !runningGames) {
                 // Undo the last move
                 if (moveHistory.Count > 0) {
                     moveHistory.RemoveAt(moveHistory.Count - 1);
@@ -456,7 +462,7 @@ class Program {
                 }
             }
 
-            if (Raylib.IsKeyPressed(KeyboardKey.M)) {
+            if (Raylib.IsKeyPressed(KeyboardKey.M) && !runningGames) {
                 // force the bot to make a move
                 if (!runningGames) {
                     string move = askMove(boardState.white_to_move == botASide ? botExecutablePathA : botExecutablePathB);
@@ -467,16 +473,16 @@ class Program {
                 }
             }
 
-            if (Raylib.IsKeyPressed(KeyboardKey.Q)) {
+            if (Raylib.IsKeyPressed(KeyboardKey.Q) && !runningGames) {
                 promotionPiece = 'q'; // Queen
             }
-            if (Raylib.IsKeyPressed(KeyboardKey.R)) {
+            if (Raylib.IsKeyPressed(KeyboardKey.R) && !runningGames) {
                 promotionPiece = 'r'; // Rook
             }
-            if (Raylib.IsKeyPressed(KeyboardKey.B)) {
+            if (Raylib.IsKeyPressed(KeyboardKey.B) && !runningGames) {
                 promotionPiece = 'b'; // Bishop
             }
-            if (Raylib.IsKeyPressed(KeyboardKey.N)) {
+            if (Raylib.IsKeyPressed(KeyboardKey.N) && !runningGames) {
                 promotionPiece = 'n'; // Knight
             }
 
@@ -484,64 +490,63 @@ class Program {
                 // If the engine is running, ask it for a move
                 if (!thinking) {
                     thinking = true;
-                    System.Threading.ThreadPool.QueueUserWorkItem(_ => {
-                        string move = askMove(boardState.white_to_move == botASide ? botExecutablePathA : botExecutablePathB);
-                        if (move != null) {
-                            // Add the move to the history
-                            moveHistory.Add(move);
-                            UpdateBoardState();
+                    string move = askMove(boardState.white_to_move == botASide ? botExecutablePathA : botExecutablePathB, fens[fen_index % fens.Count]);
+                    if (move != null) {
+                        // Add the move to the history
+                        moveHistory.Add(move);
+                        UpdateBoardState(fens[fen_index % fens.Count]);
 
-                            if (state == State.CheckMate) {
-                                losses += boardState.white_to_move && botASide == boardState.white_to_move ? 1 : 0;
-                                wins += boardState.white_to_move && botASide == boardState.white_to_move ? 0 : 1;
-                            } else if (state != State.None) {
-                                draws++;
+                        if (state == State.CheckMate) {
+                            losses += boardState.white_to_move && botASide == boardState.white_to_move ? 1 : 0;
+                            wins += boardState.white_to_move && botASide == boardState.white_to_move ? 0 : 1;
+                        } else if (state != State.None) {
+                            draws++;
+                        }
+
+                        if (state != State.None && gamesPlayed < numGames) {
+                            if (++gamesPlayed >= numGames) {
+                                runningGames = false;
+                                // save to log file
                             }
+                            using (StreamWriter logWriter = new(currentLogFile, append: true)) {
+                                logWriter.WriteLine($"=======================");
+                                logWriter.WriteLine($"  Result Game {gamesPlayed}");
+                                logWriter.WriteLine($"  Result: {(state == State.CheckMate ? (boardState.white_to_move ? "Black wins" : "White wins") : "Draw")}");
+                                logWriter.WriteLine($"  Ending FEN: {boardState.ToFEN()}");
+                                logWriter.WriteLine($"=======================");
+                                logWriter.WriteLine();
 
-                            if (state != State.None && gamesPlayed < numGames) {
-                                if (++gamesPlayed >= numGames) {
-                                    runningGames = false;
-                                    // save to log file
-                                }
-                                using (StreamWriter logWriter = new(currentLogFile, append: true)) {
+                                if (runningGames) {
                                     logWriter.WriteLine($"=======================");
-                                    logWriter.WriteLine($"  Result Game {gamesPlayed}");
-                                    logWriter.WriteLine($"  Result: {(state == State.CheckMate ? (boardState.white_to_move ? "Black wins" : "White wins") : "Draw")}");
-                                    logWriter.WriteLine($"  Ending FEN: {boardState.ToFEN()}");
+                                    logWriter.WriteLine($"  Game {gamesPlayed + 1}");
+                                    logWriter.WriteLine($"  Starting FEN: {fens[++fen_index % fens.Count]}");
+                                    logWriter.WriteLine($"  White: {(botASide ? "Bot B" : "Bot A")}");
+                                    logWriter.WriteLine($"  Black: {(botASide ? "Bot A" : "Bot B")}");
                                     logWriter.WriteLine($"=======================");
                                     logWriter.WriteLine();
-
-                                    if (runningGames) {
-                                        logWriter.WriteLine($"=======================");
-                                        logWriter.WriteLine($"  Game {gamesPlayed + 1}");
-                                        logWriter.WriteLine($"  Starting FEN: {startFEN}");
-                                        logWriter.WriteLine($"  White: {(botASide ? "Bot B" : "Bot A")}");
-                                        logWriter.WriteLine($"  Black: {(botASide ? "Bot A" : "Bot B")}");
-                                        logWriter.WriteLine($"=======================");
-                                        logWriter.WriteLine();
-                                    } else {
-                                        logWriter.WriteLine($"==============================================");
-                                        logWriter.WriteLine($"\tFinished all games at {DateTime.Now}");
-                                        logWriter.WriteLine($"\tTotal games played: {gamesPlayed}");
-                                        logWriter.WriteLine($"\tWins: {wins}, Draws: {draws}, Losses: {losses}");
-                                        logWriter.WriteLine($"==============================================");
-                                    }
+                                } else {
+                                    logWriter.WriteLine($"==============================================");
+                                    logWriter.WriteLine($"\tFinished all games at {DateTime.Now}");
+                                    logWriter.WriteLine($"\tTotal games played: {gamesPlayed}");
+                                    logWriter.WriteLine($"\tWins: {wins}, Draws: {draws}, Losses: {losses}");
+                                    logWriter.WriteLine($"==============================================");
                                 }
-
-                                boardState.FromFEN(startFEN);
-                                moveHistory.Clear();
-                                botASide = !botASide;
                             }
+
+                            boardState.FromFEN(fens[fen_index % fens.Count]);
+                            moveHistory.Clear();
+                            botASide = !botASide;
                         }
-                        thinking = false;
-                    });
+                    }
+                    thinking = false;
                 }
             }
         }
 
         Raylib.CloseWindow();
 
-        void UpdateBoardState() {
+        void UpdateBoardState(string sfen = null) {
+            sfen ??= startFEN;
             // Run engine/chess.exe and ask for legal moves and draw them
             Process engineProcess = new();
             engineProcess.StartInfo.FileName = enginePath;
@@ -556,7 +561,7 @@ class Program {
             StreamReader engineOutput = engineProcess.StandardOutput;
 
             engineInput.WriteLine("setfen");
-            engineInput.WriteLine(startFEN);
+            engineInput.WriteLine(sfen);
             // check if response is ok
             string response = engineOutput.ReadLine();
             if (response != "ok") {
@@ -660,7 +665,9 @@ class Program {
             }
         }
 
-        string askMove(string botExecutablePath) {
+        string askMove(string botExecutablePath, string sfen = null) {
+            sfen ??= startFEN;
+
             if (string.IsNullOrEmpty(botExecutablePath)) {
                 Console.WriteLine("No bot executable path provided.");
                 return null;
@@ -694,7 +701,7 @@ class Program {
             StreamReader botOutput = botProcess.StandardOutput;
 
             botInput.WriteLine("setfen");
-            botInput.WriteLine(startFEN);
+            botInput.WriteLine(sfen);
             // check if response is ok
             string response = botOutput.ReadLine();
             if (response != "ok") {
@@ -815,6 +822,7 @@ class BoardState {
     }
 
     public void FromFEN(string fen) {
+        Console.WriteLine($"Parsing FEN: {fen}");
         string[] parts = fen.Split(' ');
 
         // Parse the board
