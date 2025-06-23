@@ -21,6 +21,8 @@ class Program {
     static Color light_square_color = new(0xff, 0xe6, 0xcc);
     static Color dark_square_color = new(0x80, 0x42, 0x1c);
 
+    static Dictionary<string, BotInstance> botInstances = new();
+
     static readonly int board_size = 800;
 
     static int SquareSize => board_size / 8;
@@ -28,6 +30,9 @@ class Program {
     static readonly string logFolder = "C:/Users/Sebastiaan Heins/Downloads/chess-c/logs/";
 
     static readonly string startFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    static readonly string startMoves = "";
+
+    static readonly int thinkingTimeMs = 100; // Time in milliseconds for the bot to think
 
     static readonly string enginePath = "C:/Users/Sebastiaan Heins/Downloads/chess-c/build/chess.exe";
 
@@ -66,7 +71,7 @@ class Program {
         char promotionPiece = 'q'; // Default promotion piece, can be changed later
 
         List<string> moves = [];
-        List<string> moveHistory = [];
+        List<string> moveHistory = string.IsNullOrWhiteSpace(startMoves) ? [] : startMoves.Split(' ').ToList();
 
         // UI variables
         int uiWidth = 350;
@@ -97,8 +102,8 @@ class Program {
         bool runningGames = false;
         int wins = 0, draws = 0, losses = 0, gamesPlayed = 0;
 
-        Rectangle boardRect = new (uiWidth, 0, board_size, board_size);
-        
+        Rectangle boardRect = new(uiWidth, 0, board_size, board_size);
+
         UpdateBoardState();
 
         while (!Raylib.WindowShouldClose()) {
@@ -141,7 +146,8 @@ class Program {
                                 boardState.FromFEN(startFEN);
                                 moveHistory.Clear();
                                 botASide = true; // A bot is white
-                                string move = askMove(botExecutablePathA);
+                                string move = askMoveTryAgain(botExecutablePathA);
+
                                 moveHistory.Add(move);
                                 UpdateBoardState();
                             }
@@ -236,12 +242,14 @@ class Program {
 
                 runningGames = true;
                 wins = draws = losses = 0;
+                gamesPlayed = 0;
                 fen_index = 0;
+                ClearBotEngines();
 
                 boardState.FromFEN(fens[fen_index % fens.Count]);
                 moveHistory.Clear();
                 botASide = true; // Start with Bot A as white
-                
+
                 UpdateBoardState(fens[fen_index % fens.Count]);
 
                 // append to log file	
@@ -263,7 +271,7 @@ class Program {
 
 
                     logWriter.WriteLine($"=======================");
-                    logWriter.WriteLine($"  Game {1}");
+                    logWriter.WriteLine($"  Game {gamesPlayed + 1}");
                     logWriter.WriteLine($"  Starting FEN: {fens[fen_index % fens.Count]}");
                     logWriter.WriteLine($"  White: {(botASide ? "Bot A" : "Bot B")}");
                     logWriter.WriteLine($"  Black: {(botASide ? "Bot B" : "Bot A")}");
@@ -424,9 +432,10 @@ class Program {
                             (!boardState.white_to_move && selectedBotBlack == 0 && selectedBotWhite != 0)
                         ) {
                             string move = boardState.white_to_move
-                                ? askMove(botExecutablePathB)
-                                : askMove(botExecutablePathA);
+                                ? askMoveTryAgain(botExecutablePathB)
+                                : askMoveTryAgain(botExecutablePathA);
                             if (move != null) {
+                                UpdateBoardState();
                                 moveHistory.Add(move);
                                 UpdateBoardState();
                             }
@@ -459,13 +468,15 @@ class Program {
                 if (moveHistory.Count > 0) {
                     moveHistory.RemoveAt(moveHistory.Count - 1);
                     UpdateBoardState();
+                    // bots are too stupid to handle this, so we clear them
+                    ClearBotEngines();
                 }
             }
 
             if (Raylib.IsKeyPressed(KeyboardKey.M) && !runningGames) {
                 // force the bot to make a move
                 if (!runningGames) {
-                    string move = askMove(boardState.white_to_move == botASide ? botExecutablePathA : botExecutablePathB);
+                    string move = askMoveTryAgain(boardState.white_to_move == botASide ? botExecutablePathA : botExecutablePathB);
                     if (move != null) {
                         moveHistory.Add(move);
                         UpdateBoardState();
@@ -490,7 +501,7 @@ class Program {
                 // If the engine is running, ask it for a move
                 if (!thinking) {
                     thinking = true;
-                    string move = askMove(boardState.white_to_move == botASide ? botExecutablePathA : botExecutablePathB, fens[fen_index % fens.Count]);
+                    string move = askMoveTryAgain(boardState.white_to_move == botASide ? botExecutablePathA : botExecutablePathB, fens[fen_index % fens.Count]);
                     if (move != null) {
                         // Add the move to the history
                         moveHistory.Add(move);
@@ -535,6 +546,7 @@ class Program {
 
                             boardState.FromFEN(fens[fen_index % fens.Count]);
                             moveHistory.Clear();
+                            ClearBotEngines();
                             botASide = !botASide;
                         }
                     }
@@ -673,86 +685,128 @@ class Program {
                 return null;
             }
 
-            // log file
-            if (!System.IO.Directory.Exists(logFolder)) {
+            var bot = GetOrStartBot(botExecutablePath);
+            var input = bot.Input;
+            var output = bot.Output;
+
+            void Send(string line) {
+                input.WriteLine(line);
+                input.Flush();
+            }
+
+            string Receive() {
+                string line = output.ReadLine();
+                if (line == null) throw new Exception($"Bot {botExecutablePath} closed unexpectedly.");
+                return line;
+            }
+
+            // Logging
+            if (!System.IO.Directory.Exists(logFolder))
                 System.IO.Directory.CreateDirectory(logFolder);
-            }
-            if (currentLogFile == null) {
+
+            if (currentLogFile == null)
                 currentLogFile = $"{logFolder}chess_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
-            }
+
             using (StreamWriter logWriter = new(currentLogFile, append: true)) {
                 logWriter.WriteLine($"Asking bot for move at {DateTime.Now}");
                 logWriter.WriteLine($"FEN: {boardState.ToFEN()}");
                 logWriter.WriteLine($"Move history: {string.Join(" ", moveHistory)}");
+            }
+
+            // Set FEN
+            Send("setfen");
+            Send(sfen);
+            if (Receive() != "ok") return null;
+
+            // Move history
+            Send("setmovehistory");
+            Send(string.Join(" ", moveHistory));
+            if (Receive() != "ok") return null;
+
+            // Ask for move
+            Send("getmove");
+            Send(thinkingTimeMs.ToString());
+            string move = Receive();
+            string depth = Receive(); // optional
+            if (Receive() != "ok") return null;
+
+            using (StreamWriter logWriter = new(currentLogFile, append: true)) {
+                logWriter.WriteLine($"Bot {botExecutablePath} suggested move: {move}");
+                logWriter.WriteLine($"Depth searched: {depth}");
                 logWriter.WriteLine();
             }
 
-            Process botProcess = new();
+            Console.WriteLine($"Bot {botExecutablePath} Depth: {depth}, Move: {move}");
+
+            return move;
+        }
+
+        string askMoveTryAgain(string botExecutablePath, string sfen = null) {
+            string move = null;
+            while (move == null) {
+                try {
+                    move = askMove(botExecutablePath, sfen);
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"Error asking bot {botExecutablePath} for move: {ex.Message}");
+                    if (runningGames) {
+                        // log the error
+                        using (StreamWriter logWriter = new(currentLogFile, append: true)) {
+                            logWriter.WriteLine($"Error asking bot {botExecutablePath} for move");
+                            logWriter.WriteLine($"FEN: {boardState.ToFEN()}");
+                            logWriter.WriteLine($"Move history: {string.Join(" ", moveHistory)}");
+                            logWriter.WriteLine();
+                        }
+                    }
+                    ClearBotEngines();
+                }
+            }
+            return move;
+        }
+
+        BotInstance GetOrStartBot(string botExecutablePath) {
+            if (botInstances.TryGetValue(botExecutablePath, out var existing)) {
+                return existing;
+            }
+
+            var botProcess = new Process();
             botProcess.StartInfo.FileName = botExecutablePath;
             botProcess.StartInfo.Arguments = "engine";
             botProcess.StartInfo.UseShellExecute = false;
             botProcess.StartInfo.RedirectStandardInput = true;
             botProcess.StartInfo.RedirectStandardOutput = true;
             botProcess.StartInfo.CreateNoWindow = true;
-
             botProcess.Start();
 
-            StreamWriter botInput = botProcess.StandardInput;
-            StreamReader botOutput = botProcess.StandardOutput;
+            var instance = new BotInstance {
+                Process = botProcess,
+                Input = botProcess.StandardInput,
+                Output = botProcess.StandardOutput
+            };
 
-            botInput.WriteLine("setfen");
-            botInput.WriteLine(sfen);
-            // check if response is ok
-            string response = botOutput.ReadLine();
-            if (response != "ok") {
-                Console.WriteLine($"Error setting FEN: {response}");
-                return null;
-            }
+            botInstances[botExecutablePath] = instance;
+            return instance;
+        }
 
-            // Sending move history to the engine
-            string movesString = string.Join(" ", moveHistory);
-            botInput.WriteLine("setmovehistory");
-            botInput.WriteLine(movesString);
-            // check if response is ok
-            response = botOutput.ReadLine();
-            if (response != "ok") {
-                Console.WriteLine($"Error setting move history: {response}");
-                return null;
-            }
+        void ClearBotEngines() {
+            foreach (var kvp in botInstances) {
+                var bot = kvp.Value;
+                try {
+                    bot.Input.WriteLine("end");
+                    bot.Input.Flush();
 
-
-            // Ask for move to play
-            botInput.WriteLine("getmove");
-            botInput.WriteLine("1");
-            string move = botOutput.ReadLine();
-            if (move == null || move == "ok") {
-                Console.WriteLine($"Error getting move: {move}");
-                return null;
-            }
-            response = botOutput.ReadLine();
-            if (response != "ok") {
-                // It's a debug message, so we can print it
-                if (!string.IsNullOrEmpty(response)) {
-                    Console.WriteLine("Bot response: " + response);
-                }
-
-                // check for ok again
-                response = botOutput.ReadLine();
-                if (response != "ok") {
-                    Console.WriteLine($"Error getting move: expected 'ok' response, got '{response}'");
-                    return null;
+                    if (!bot.Process.WaitForExit(1000)) {
+                        bot.Process.Kill(true);
+                        bot.Process.WaitForExit();
+                    }
+                } catch (Exception ex) {
+                    Console.WriteLine($"Error stopping bot {kvp.Key}: {ex.Message}");
+                } finally {
+                    bot.Process.Dispose();
                 }
             }
 
-
-            botInput.WriteLine("end");
-            botProcess.WaitForExit();
-            if (botProcess.ExitCode != 0) {
-                Console.WriteLine($"Bot process exited with code {botProcess.ExitCode}");
-                return null;
-            }
-
-            return move;
+            botInstances.Clear();
         }
     }
 }
@@ -855,7 +909,13 @@ class BoardState {
         board.Reverse();
     }
 
-    public BoardState (string fen) {
+    public BoardState(string fen) {
         FromFEN(fen);
     }
+}
+
+class BotInstance {
+    public Process Process { get; set; }
+    public StreamWriter Input { get; set; }
+    public StreamReader Output { get; set; }
 }
