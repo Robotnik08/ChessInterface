@@ -1,4 +1,11 @@
 # Chess Interface manager
 
-Used for handling my chess engine made in C, which doesn't have a GUI interface. This simple program allows you to link up a Chess backend, the GUI just asks for legal moves and draws squares, actual chess rules are not included in this repository.
+Used for handling my chess engine made in C, which doesn't have a GUI interface.
 
+# Features
+
+- Get moves from a chess implementation
+- Play Human vs Human
+- Play Human vs Engine
+- Play Engine vs Engine
+- Analyze multiple Engine vs Engine games with random fens (which are about equal)
