@@ -142,6 +142,33 @@ namespace ChessInterface {
             if (Raylib.IsKeyPressed(KeyboardKey.N) && !runningGames) {
                 promotionPiece = 'n'; // Knight
             }
+
+            if (Raylib.IsKeyPressed(KeyboardKey.Right) && !runningGames) {
+                // Next FEN
+                fen_index = (fen_index + 1) % fens.Count;
+                string nextFEN = fens[fen_index];
+                boardState.FromFEN(nextFEN);
+                moveHistory.Clear();
+                UpdateBoardState(nextFEN);
+            }
+            if (Raylib.IsKeyPressed(KeyboardKey.Left) && !runningGames) {
+                // Previous FEN
+                fen_index = (fen_index - 1 + fens.Count) % fens.Count;
+                string prevFEN = fens[fen_index];
+                boardState.FromFEN(prevFEN);
+                moveHistory.Clear();
+                UpdateBoardState(prevFEN);
+            }
+
+            if (Raylib.IsKeyPressed(KeyboardKey.L) && !runningGames) {
+                // Load a FEN from a message box
+                string inputFEN = Microsoft.VisualBasic.Interaction.InputBox("Enter FEN string:", "Load FEN", boardState.ToFEN());
+                if (!string.IsNullOrWhiteSpace(inputFEN)) {
+                    boardState.FromFEN(inputFEN);
+                    moveHistory.Clear();
+                    UpdateBoardState(inputFEN);
+                }
+            }
         }
         
         public void UpdateBoardState(string sfen = null, bool is_bot_vs_bot = false) {
