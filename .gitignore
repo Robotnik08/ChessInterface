@@ -22,6 +22,7 @@ publish/
 
 # Logs
 *.log
+logs/
 
 # Raylib files
 raylib.dll
@@ -30,3 +31,6 @@ raylib.dll
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# allow chess_implementation folder contents to be tracked
+!chess.exe
