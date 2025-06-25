@@ -36,12 +36,16 @@ namespace ChessInterface {
             }
         }
 
-        public void DrawBoard(int boardSize, int boardOffsetX, int boardOffsetY, BoardState boardState, List<string> moves, int holdIndex, bool isDragging, string lastMove = null) {
+        public void DrawBoard(int boardSize, int boardOffsetX, int boardOffsetY) {
             int squareSize = boardSize / 8;
+
+            string lastMove = ChessApp.instance.moveHistory.Count > 0 ? ChessApp.instance.moveHistory.Last() : null;
+            int holdIndex = ChessApp.instance.holdIndex;
+            bool isDragging = ChessApp.instance.isDragging;
 
             // Make a move list of moves to render based on the start of the move (the dragging piece)
             List<string> moveRenderList = [];
-            foreach (string move in moves) {
+            foreach (string move in ChessApp.instance.moves) {
                 if (move.StartsWith($"{(char)('a' + holdIndex % 8)}{(char)('1' + (holdIndex / 8))}")) {
                     moveRenderList.Add(move);
                 }
@@ -72,7 +76,7 @@ namespace ChessInterface {
                     }
 
                     // Draw the pieces
-                    char piece = boardState.board[rank][file];
+                    char piece = ChessApp.instance.boardState.board[rank][file];
                     if (piece != '.' && pieceSprites.ContainsKey(piece.ToString()) && !(holdIndex == (rank * 8 + file) && isDragging)) {
                         Texture2D texture = pieceSprites[piece.ToString()];
                         Raylib.DrawTexturePro(
@@ -95,7 +99,7 @@ namespace ChessInterface {
                     int x = holdIndex % 8;
                     int yBoard = holdIndex / 8;
 
-                    char piece = boardState.board[yBoard][x];
+                    char piece = ChessApp.instance.boardState.board[yBoard][x];
                     if (piece != '.' && pieceSprites.ContainsKey(piece.ToString())) {
                         Texture2D texture = pieceSprites[piece.ToString()];
                         Raylib.DrawTexturePro(
@@ -111,13 +115,7 @@ namespace ChessInterface {
             }
         }
 
-        public void HandleBoardInteraction(
-            int boardSize, int boardOffsetX, int boardOffsetY,
-            BoardState boardState, List<string> moves,
-            ref int holdIndex, ref bool isDragging,
-            string botExecutablePathA, string botExecutablePathB, int selectedBotWhite, int selectedBotBlack,
-            List<string> moveHistory, ref char promotionPiece
-        ) {
+        public void HandleBoardInteraction(int boardSize, int boardOffsetX, int boardOffsetY) {
             int squareSize = boardSize / 8;
 
             do {
@@ -125,90 +123,90 @@ namespace ChessInterface {
                     Vector2 mousePos = Raylib.GetMousePosition();
                     if ((mousePos.X - boardOffsetX) < 0 || (mousePos.X - boardOffsetX) > boardSize || (mousePos.Y - boardOffsetY) < 0 || (mousePos.Y - boardOffsetY) > boardSize) {
                         // If mouse is outside the board, reset holdIndex and isDragging
-                        holdIndex = -1;
-                        isDragging = false;
+                        ChessApp.instance.holdIndex = -1;
+                        ChessApp.instance.isDragging = false;
                         break;
                     }
                     int x = (int)((mousePos.X - boardOffsetX) / squareSize);
                     int y = 7 - (int)((mousePos.Y - boardOffsetY) / squareSize);
 
                     if (x >= 0 && x < 8 && y >= 0 && y < 8) {
-                        char piece = boardState.board[y][x];
+                        char piece = ChessApp.instance.boardState.board[y][x];
                         if (piece != '.') {
-                            holdIndex = y * 8 + x;
-                            isDragging = true;
+                            ChessApp.instance.holdIndex = y * 8 + x;
+                            ChessApp.instance.isDragging = true;
                         }
                     }
                 }
             } while (false);
 
-            // do {
-            //     if (Raylib.IsMouseButtonReleased(MouseButton.Left) && isDragging) {
-            //         Vector2 mousePos = Raylib.GetMousePosition();
+            do {
+                if (Raylib.IsMouseButtonReleased(MouseButton.Left) && ChessApp.instance.isDragging) {
+                    Vector2 mousePos = Raylib.GetMousePosition();
 
-            //         // check if mouse on the board
-            //         if ((mousePos.X - boardOffsetX) < 0 || (mousePos.X - boardOffsetX) > boardSize || (mousePos.Y - boardOffsetY) < 0 || (mousePos.Y - boardOffsetY) > boardSize) {
-            //             holdIndex = -1;
-            //             isDragging = false;
-            //             break;
-            //         }
+                    // check if mouse on the board
+                    if ((mousePos.X - boardOffsetX) < 0 || (mousePos.X - boardOffsetX) > boardSize || (mousePos.Y - boardOffsetY) < 0 || (mousePos.Y - boardOffsetY) > boardSize) {
+                        ChessApp.instance.holdIndex = -1;
+                        ChessApp.instance.isDragging = false;
+                        break;
+                    }
 
-            //         int x = (int)((mousePos.X - boardOffsetX) / squareSize);
-            //         int y = 7 - (int)((mousePos.Y - boardOffsetY) / squareSize);
+                    int x = (int)((mousePos.X - boardOffsetX) / squareSize);
+                    int y = 7 - (int)((mousePos.Y - boardOffsetY) / squareSize);
 
-            //         // if they are the same square, just ignore
-            //         if (holdIndex == y * 8 + x) {
-            //             holdIndex = -1;
-            //             isDragging = false;
-            //             break;
-            //         }
+                    // if they are the same square, just ignore
+                    if (ChessApp.instance.holdIndex == y * 8 + x) {
+                        ChessApp.instance.holdIndex = -1;
+                        ChessApp.instance.isDragging = false;
+                        break;
+                    }
 
-            //         if (x >= 0 && x < 8 && y >= 0 && y < 8) {
+                    if (x >= 0 && x < 8 && y >= 0 && y < 8) {
 
-            //             string generatedMove = $"{(char)('a' + holdIndex % 8)}{(char)('1' + (holdIndex / 8))}{(char)('a' + x)}{(char)('1' + y)}";
+                        string generatedMove = $"{(char)('a' + ChessApp.instance.holdIndex % 8)}{(char)('1' + (ChessApp.instance.holdIndex / 8))}{(char)('a' + x)}{(char)('1' + y)}";
 
-            //             // Add move from move list if that's in there
-            //             if (moves.Count > 0 && moves.Any(m => m.StartsWith(generatedMove))) {
-            //                 char piece = boardState.board[holdIndex / 8][holdIndex % 8];
-            //                 boardState.board[holdIndex / 8] = boardState.board[holdIndex / 8].Remove(holdIndex % 8, 1).Insert(holdIndex % 8, ".");
-            //                 boardState.board[y] = boardState.board[y].Remove(x, 1).Insert(x, piece.ToString());
+                        // Add move from move list if that's in there
+                        if (ChessApp.instance.moves.Count > 0 && ChessApp.instance.moves.Any(m => m.StartsWith(generatedMove))) {
+                            char piece = ChessApp.instance.boardState.board[ChessApp.instance.holdIndex / 8][ChessApp.instance.holdIndex % 8];
+                            ChessApp.instance.boardState.board[ChessApp.instance.holdIndex / 8] = ChessApp.instance.boardState.board[ChessApp.instance.holdIndex / 8].Remove(ChessApp.instance.holdIndex % 8, 1).Insert(ChessApp.instance.holdIndex % 8, ".");
+                            ChessApp.instance.boardState.board[y] = ChessApp.instance.boardState.board[y].Remove(x, 1).Insert(x, piece.ToString());
 
-            //                 // check if amount of moves is more than 1, if so, that means it's a promotion and it needs to pick the one based on preference
-            //                 if (moves.Count(m => m.StartsWith(generatedMove)) > 1) {
-            //                     moveHistory.Add(generatedMove + promotionPiece);
-            //                 } else {
-            //                     // find the move that matches the holdIndex
-            //                     string move = moves.First(m => m.StartsWith(generatedMove));
-            //                     moveHistory.Add(move);
-            //                 }
+                            // check if amount of moves is more than 1, if so, that means it's a promotion and it needs to pick the one based on preference
+                            if (ChessApp.instance.moves.Count(m => m.StartsWith(generatedMove)) > 1) {
+                                ChessApp.instance.moveHistory.Add(generatedMove + ChessApp.instance.promotionPiece);
+                            } else {
+                                // find the move that matches the holdIndex
+                                string move = ChessApp.instance.moves.First(m => m.StartsWith(generatedMove));
+                                ChessApp.instance.moveHistory.Add(move);
+                            }
 
-            //                 // clear moves
-            //                 moves.Clear();
+                            // clear moves
+                            ChessApp.instance.moves.Clear();
 
-            //                 // Run bot move in a background thread if needed
-            //                 if (
-            //                     (boardState.white_to_move && selectedBotWhite == 0 && selectedBotBlack != 0) ||
-            //                     (!boardState.white_to_move && selectedBotBlack == 0 && selectedBotWhite != 0)
-            //                 ) {
-            //                     string move = boardState.white_to_move
-            //                         ? askMoveTryAgain(botExecutablePathB, false)
-            //                         : askMoveTryAgain(botExecutablePathA, true);
-            //                     if (move != null) {
-            //                         UpdateBoardState();
-            //                         moveHistory.Add(move);
-            //                         UpdateBoardState();
-            //                     }
-            //                 } else {
-            //                     UpdateBoardState();
-            //                 }
-            //             }
-            //         }
+                            // Run bot move in a background thread if needed
+                            if (
+                                (ChessApp.instance.boardState.white_to_move && ChessApp.instance.botHandler.selectedBotWhite == 0 && ChessApp.instance.botHandler.selectedBotBlack != 0) ||
+                                (!ChessApp.instance.boardState.white_to_move && ChessApp.instance.botHandler.selectedBotBlack == 0 && ChessApp.instance.botHandler.selectedBotWhite != 0)
+                            ) {
+                                string move = ChessApp.instance.boardState.white_to_move
+                                    ? ChessApp.instance.botHandler.askMoveTryAgain(ChessApp.instance.botHandler.botExecutablePathB, false)
+                                    : ChessApp.instance.botHandler.askMoveTryAgain(ChessApp.instance.botHandler.botExecutablePathA, true);
+                                if (move != null) {
+                                    ChessApp.instance.UpdateBoardState();
+                                    ChessApp.instance.moveHistory.Add(move);
+                                    ChessApp.instance.UpdateBoardState();
+                                }
+                            } else {
+                                ChessApp.instance.UpdateBoardState();
+                            }
+                        }
+                    }
 
-            //         promotionPiece = 'q'; // Reset promotion piece to queen after a move
-            //         holdIndex = -1;
-            //         isDragging = false;
-            //     }
-            // } while (false);
+                    ChessApp.instance.promotionPiece = 'q'; // Reset promotion piece to queen after a move
+                    ChessApp.instance.holdIndex = -1;
+                    ChessApp.instance.isDragging = false;
+                }
+            } while (false);
         }
     }
 }

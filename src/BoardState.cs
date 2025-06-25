@@ -86,6 +86,8 @@ namespace ChessInterface {
         public BoardState(string fen) {
             FromFEN(fen);
         }
+
+        public BoardState() { }
     }
 
     public enum State {
