@@ -131,8 +131,8 @@ namespace ChessInterface {
                         ChessApp.instance.UpdateBoardState(ChessApp.instance.fens[ChessApp.instance.fen_index % ChessApp.instance.fens.Count], true);
 
                         if (ChessApp.instance.state == State.CheckMate) {
-                            losses += botASide == white_to_move ? 1 : 0;
-                            wins += botASide == white_to_move ? 0 : 1;
+                            losses += botASide == white_to_move ? 0 : 1;
+                            wins += botASide == white_to_move ? 1 : 0;
                         } else if (ChessApp.instance.state != State.None) {
                             draws++;
                         }
